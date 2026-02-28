@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrade Pro — Arbitrage & Logistics Command Center v4.0</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- ========== API CONFIG — CHANGE THIS TO YOUR RENDER URL ========== -->
+<script>
+  // ╔═══════════════════════════════════════════════════════════════╗
+  // ║  STEP 1: Replace the URL below with your Render backend URL  ║
+  // ║  STEP 2: For local dev, uncomment the localhost line          ║
+  // ╚═══════════════════════════════════════════════════════════════╝
+  window.API_BASE = "https://tiretrade-api.onrender.com";
+  // window.API_BASE = "http://localhost:8000";  // ← Uncomment for local dev
+</script>
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        brand: { 50:'#edfcf2', 100:'#d3f9e0', 200:'#aaf0c4', 300:'#6ae29c', 400:'#33cc6f', 500:'#14a34a', 600:'#0f8c3e', 700:'#0d6e33', 800:'#0e5a2c', 900:'#0c4a25' },
+        danger: { 50:'#fef2f2', 100:'#fee2e2', 200:'#fecaca', 400:'#f87171', 500:'#ef4444', 600:'#dc2626' },
+        warn: { 50:'#fffbeb', 100:'#fef3c7', 200:'#fde68a', 400:'#fbbf24', 500:'#f59e0b', 600:'#d97706' },
+        ocean: { 50:'#f0f9ff', 100:'#e0f2fe', 200:'#bae6fd', 400:'#38bdf8', 500:'#0ea5e9', 600:'#0284c7' },
+        purple: { 50:'#faf5ff', 600:'#9333ea', 700:'#7e22ce' }
+      },
+      fontFamily: { sans: ['DM Sans', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] }
+    }
+  }
+}
+</script>
+<style>
+  [x-cloak] { display: none !important; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #f1f5f9; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  body { background: #f8fafc; font-size: 14px; }
+  .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; }
+  .card-hover:hover { border-color: #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+  .input-field { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; color: #0f172a; font-size: 13px; transition: all 0.2s; }
+  .input-field:focus { border-color: #14a34a; outline: none; box-shadow: 0 0 0 3px rgba(20,163,74,0.1); background: #fff; }
+  .profit-pill { font-family: 'JetBrains Mono', monospace; }
+  .tab-active { border-bottom: 2px solid #0f8c3e; color: #0f8c3e; font-weight: 600; }
+  .tab-inactive { border-bottom: 2px solid transparent; color: #64748b; }
+  .tab-inactive:hover { color: #334155; }
+  .date-missing { animation: pulse-warn 2s infinite; }
+  @keyframes pulse-warn { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+  .track-btn { transition: all 0.15s; }
+  .track-btn:hover { transform: translateY(-1px); }
+  .tracking-result { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  .wake-overlay { position:fixed; inset:0; z-index:9999; background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; transition:opacity 0.5s ease,visibility 0.5s ease; }
+  .wake-overlay.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+  .wake-spinner { width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#0f8c3e; border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body class="font-sans text-slate-700 min-h-screen" x-data="app()" x-init="init()" x-cloak>
+
+<!-- ==================== SERVER WAKE-UP OVERLAY ==================== -->
+<div class="wake-overlay" :class="{ 'hidden': !serverWaking }">
+  <div class="w-12 h-12 rounded-xl bg-brand-600 flex items-center justify-center shadow-lg mb-6">
+    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+  </div>
+  <div class="wake-spinner mb-5"></div>
+  <h2 class="text-lg font-bold text-slate-900 mb-2">Starting TireTrade Pro…</h2>
+  <p class="text-sm text-slate-500 max-w-xs text-center leading-relaxed" x-text="wakeMessage"></p>
+  <p class="text-[11px] text-slate-400 mt-4 font-mono" x-show="wakeElapsed > 5" x-text="wakeElapsed + 's elapsed'"></p>
+</div>
+
+<!-- ==================== HEADER ==================== -->
+<header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
+      <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-slate-900 tracking-tight leading-none">TireTrade<span class="text-brand-600">Pro</span></h1>
+      <p class="text-[10px] text-slate-400 font-mono tracking-widest uppercase">Web Edition (v4.0)</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-2.5 flex-wrap">
+    <span class="text-[10px] font-mono px-2 py-1 rounded-full cursor-help"
+          :class="saveStatus === 'ok' ? 'bg-brand-50 text-brand-600' : saveStatus === 'error' ? 'bg-danger-50 text-danger-600' : 'bg-warn-50 text-warn-600'"
+          x-text="saveStatus === 'ok' ? 'Cloud OK — ' + deals.length + ' deals' : saveStatus === 'error' ? 'SAVE ERROR' : 'Connecting…'"></span>
+    <button @click="exportToExcel()" class="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-lg transition">Export .xlsx</button>
+    <button @click="downloadBackup()" class="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-lg transition">Backup .json</button>
+    <label class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition shadow-sm">
+      Import .json <input type="file" accept=".json" class="hidden" @change="importJSON($event)">
+    </label>
+    <label class="flex items-center gap-1.5 bg-ocean-500 hover:bg-ocean-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition shadow-sm">
+      Import .xlsx <input type="file" accept=".xlsx,.xls,.csv" class="hidden" @change="importFromExcel($event)">
+    </label>
+  </div>
+</header>
+
+<!-- ==================== NAV TABS ==================== -->
+<nav class="px-6 pt-3 flex gap-6 border-b border-slate-200 bg-white">
+  <template x-for="t in tabs" :key="t.id">
+    <button @click="tab=t.id" :class="tab===t.id?'tab-active':'tab-inactive'" class="pb-3 text-sm transition" x-text="t.label"></button>
+  </template>
+</nav>
+
+<!-- ==================== DASHBOARD TAB ==================== -->
+<main class="p-6 max-w-[1440px] mx-auto" x-show="tab==='dashboard'">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="card p-5"><p class="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1">Total Containers</p><p class="text-3xl font-bold text-slate-900 font-mono" x-text="metrics.totalContainers"></p></div>
+    <div class="card p-5"><p class="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1">Avg Profit / Container</p><p class="text-3xl font-bold text-brand-600 font-mono" x-text="'$'+metrics.avgProfit.toLocaleString()"></p></div>
+    <div class="card p-5"><p class="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1">Outstanding Payables</p><p class="text-3xl font-bold text-danger-500 font-mono" x-text="'$'+metrics.totalPayables.toLocaleString()"></p></div>
+    <div class="card p-5"><p class="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1">Pending Receivables</p><p class="text-3xl font-bold text-ocean-500 font-mono" x-text="'$'+metrics.totalReceivables.toLocaleString()"></p></div>
+  </div>
+  <div class="card p-5 mb-6">
+    <h2 class="text-sm font-bold text-slate-900 mb-4">Recent Deals</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-[13px]"><thead><tr class="text-slate-400 font-mono text-[10px] uppercase tracking-wider border-b border-slate-100">
+        <th class="text-left py-3 pr-4">Deal</th><th class="text-left py-3 pr-4">Supplier / Buyer</th><th class="text-right py-3 pr-4">Total Sale</th><th class="text-right py-3 pr-4">Total Cost</th><th class="text-right py-3 pr-4">Profit</th><th class="text-right py-3 pr-4">Mo. ROI</th><th class="text-right py-3">Margin</th>
+      </tr></thead><tbody>
+        <template x-for="d in deals.slice(0,8)" :key="d.id"><tr class="border-b border-slate-50 hover:bg-slate-50/50 transition">
+          <td class="py-3 pr-4 font-mono text-slate-500 text-xs font-medium" x-text="d.id"></td>
+          <td class="py-3 pr-4"><div class="flex items-center gap-2"><span class="text-slate-900 font-medium" x-text="d.supplier"></span><span class="text-slate-300">&rarr;</span><span class="text-ocean-600" x-text="d.buyer"></span></div><div class="text-[10px] text-slate-400 mt-0.5 font-mono" x-text="routeDisplay(d)"></div></td>
+          <td class="py-3 pr-4 text-right font-mono text-slate-700" x-text="'$'+totalSale(d).toLocaleString()"></td>
+          <td class="py-3 pr-4 text-right font-mono text-slate-400" x-text="'$'+totalDealCost(d).toLocaleString()"></td>
+          <td class="py-3 pr-4 text-right font-mono font-bold" :class="totalNetProfit(d)>=0?'text-brand-600':'text-danger-500'" x-text="'$'+totalNetProfit(d).toLocaleString()"></td>
+          <td class="py-3 pr-4 text-right font-mono font-bold" :class="roiDisplayClass(d)" x-text="missingROIDates(d) ? '⚠ N/A' : formatROI(monthlyROI(d))"></td>
+          <td class="py-3 text-right"><span class="profit-pill inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border" :class="marginClass(d)" x-text="marginPct(d)+'%'"></span></td>
+        </tr></template>
+      </tbody></table>
+    </div>
+  </div>
+  <div class="card p-5 border-danger-200" x-show="cashGapDeals.length > 0">
+    <h2 class="text-sm font-bold text-danger-500 mb-3 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Cash Gap Alerts</h2>
+    <div class="space-y-2"><template x-for="d in cashGapDeals" :key="d.id">
+      <div class="bg-danger-50 border border-danger-200 rounded-lg px-4 py-2.5 text-xs flex justify-between items-center">
+        <span class="text-slate-700"><span class="font-semibold text-slate-900" x-text="d.id"></span> — Supplier due <span class="text-danger-600 font-mono" x-text="d.supplierPayDue||'N/A'"></span> before buyer pays <span class="text-ocean-600 font-mono" x-text="d.buyerPayDue||'N/A'"></span></span>
+        <span class="text-danger-600 font-mono font-bold" x-text="'Gap: '+cashGapDays(d)+'d'"></span>
+      </div>
+    </template></div>
+  </div>
+</main>
+
+<!-- ==================== DEALS TAB ==================== -->
+<main class="p-6 max-w-[1440px] mx-auto" x-show="tab==='deals'">
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-lg font-bold text-slate-900">Trading Workspace</h2>
+    <button @click="openDealModal()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New Deal</button>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <template x-for="d in deals" :key="d.id">
+      <div class="card card-hover p-5 relative" :class="marginNum(d)>=20?'border-brand-200': marginNum(d)<10?'border-danger-200':''">
+        <div class="absolute top-4 right-4 flex flex-col items-end gap-1"><span class="profit-pill text-[11px] font-bold px-3 py-1 rounded-full border" :class="marginClass(d)" x-text="marginPct(d)+'% margin'"></span></div>
+        <div class="mb-4"><p class="font-mono text-slate-400 text-[11px] mb-0.5" x-text="d.id"></p><h3 class="text-slate-900 font-bold text-sm" x-text="d.supplier+' → '+d.buyer"></h3>
+          <p class="text-[11px] text-slate-500 mt-1 flex items-center gap-1"><svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span x-text="routeDisplay(d)"></span></p>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-slate-50 rounded-lg px-3 py-2 text-[11px] font-mono border border-slate-100"><div class="text-slate-400 mb-0.5">Containers</div><div class="text-slate-800 font-bold" x-text="d.numContainers"></div></div>
+          <div class="rounded-lg px-3 py-2 text-[11px] font-mono border" :class="missingROIDates(d)?'bg-danger-50 border-danger-200':'bg-purple-50 border-purple-100'"><div class="mb-0.5 flex justify-between" :class="missingROIDates(d)?'text-danger-500':'text-purple-600'">Monthly ROI <span class="opacity-60 text-[9px]" x-text="missingROIDates(d)?'DATES MISSING':'Time-Weighted'"></span></div><div class="font-bold text-sm" :class="missingROIDates(d)?'text-danger-500 date-missing':'text-purple-700'" x-text="missingROIDates(d)?'⚠ Set dates':formatROI(monthlyROI(d))"></div></div>
+        </div>
+        <div class="bg-slate-50/80 rounded-lg p-4 mb-4 text-[13px] font-mono space-y-1.5 border border-slate-100">
+          <div class="flex justify-between items-center text-slate-500"><span class="text-xs">Export Sale</span><span class="font-bold text-slate-900 text-sm" x-text="'$'+totalSale(d).toLocaleString()"></span></div>
+          <div class="flex justify-between items-center text-slate-400 text-xs"><span>- Bale Purchase</span><span x-text="'$'+totalSupplierCost(d).toLocaleString()"></span></div>
+          <div class="flex justify-between items-center text-slate-400 text-xs"><span>- Logistics Total</span><span x-text="'$'+totalLogisticsCost(d).toLocaleString()"></span></div>
+          <div class="flex justify-between items-center font-bold pt-0.5"><span class="text-slate-700">Net Profit</span><span class="text-base" :class="totalNetProfit(d)>=0?'text-brand-600':'text-danger-500'" x-text="'$'+totalNetProfit(d).toLocaleString()"></span></div>
+        </div>
+        <template x-if="missingROIDates(d)"><div class="bg-danger-50 border border-danger-200 rounded-lg px-3 py-2 mb-4 text-[11px] text-danger-600 font-medium flex items-center gap-1.5"><svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>ROI needs: <span x-show="!d.supplierPayDue" class="underline">Supplier Pay Date</span><span x-show="!d.supplierPayDue && !d.buyerPayDue">, </span><span x-show="!d.buyerPayDue" class="underline">Buyer Pay Date</span> — click Edit to fix</span></div></template>
+        <div class="flex flex-col gap-2 mb-4 text-[11px]">
+          <template x-if="calculateDeposit(d)>0"><div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded"><span class="text-slate-500">Deposit (<span x-text="d.depositPct+'%'"></span>)</span><span class="font-mono font-bold" :class="d.depositPaid?'text-brand-600':'text-warn-600'" x-text="d.depositPaid?'PAID':'PENDING'"></span></div></template>
+          <template x-if="totalLogisticsCost(d)>0"><div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded"><span class="text-slate-500">Freight (<span x-text="d.freightPayDue||'No Date'"></span>)</span><span class="font-mono text-slate-600" x-text="'$'+totalLogisticsCost(d).toLocaleString()"></span></div></template>
+        </div>
+        <div class="flex gap-2">
+          <button @click="editDeal(d)" class="text-[11px] bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg transition text-slate-600 font-medium">Edit Details</button>
+          <button @click="deleteDeal(d.id)" class="text-[11px] bg-white hover:bg-danger-50 border border-slate-200 hover:border-danger-200 px-3 py-1.5 rounded-lg transition text-danger-500 font-medium">Delete</button>
+        </div>
+      </div>
+    </template>
+  </div>
+  <div x-show="deals.length===0" class="text-center py-20 text-slate-400"><p class="text-sm">No deals yet.</p></div>
+</main>
+
+<!-- ==================== LOGISTICS TAB (BOOKING-REF TRACKING) ==================== -->
+<main class="p-6 max-w-[1440px] mx-auto" x-show="tab==='logistics'">
+  <h2 class="text-lg font-bold text-slate-900 mb-6">Logistics Tracker</h2>
+  <div class="space-y-4">
+    <template x-for="d in deals" :key="d.id">
+      <div class="card p-5">
+        <!-- Deal Header -->
+        <div class="flex flex-wrap items-center justify-between mb-4">
+          <div>
+            <p class="font-mono text-slate-400 text-[11px]" x-text="d.id"></p>
+            <h3 class="text-slate-900 font-bold text-sm" x-text="d.supplier+' → '+d.buyer"></h3>
+            <p class="text-[11px] text-slate-500 mt-1 font-mono" x-text="routeDisplay(d)"></p>
+          </div>
+          <div class="flex gap-4 text-[11px] font-mono text-slate-500 mt-2 sm:mt-0 flex-wrap">
+            <span>Booking: <span class="text-slate-900 font-bold" x-text="d.bookingRef||'—'"></span></span>
+            <span>Carrier: <span class="text-slate-900 font-medium" x-text="carrierDisplay(d)"></span></span>
+            <span>Containers: <span class="text-slate-900 font-medium" x-text="d.numContainers"></span></span>
+          </div>
+        </div>
+
+        <!-- Stage Progress Bar -->
+        <div class="flex items-center justify-between mb-3 overflow-x-auto pb-2">
+          <template x-for="(stage,idx) in stages" :key="stage">
+            <div class="flex items-center flex-1 min-w-0">
+              <div class="flex flex-col items-center">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold transition-all" :class="stageIndex(d)>=idx?'bg-brand-600 text-white shadow-sm':'bg-slate-100 text-slate-400 border border-slate-200'" x-text="idx+1"></div>
+                <p class="text-[9px] font-mono mt-1 text-center whitespace-nowrap" :class="stageIndex(d)>=idx?'text-brand-600 font-medium':'text-slate-400'" x-text="stage"></p>
+              </div>
+              <div x-show="idx<stages.length-1" class="flex-1 h-0.5 mx-1" :class="stageIndex(d)>idx?'bg-brand-500':'bg-slate-200'"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- BOOKING REF TRACKING BUTTON -->
+        <div class="mb-3" x-show="d.bookingRef && d.carrier">
+          <div class="flex items-center gap-3 bg-ocean-50 rounded-lg px-4 py-3 border border-ocean-200">
+            <svg class="w-5 h-5 text-ocean-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
+            <div class="flex-1">
+              <p class="text-xs font-bold text-ocean-800">Booking Ref: <span class="font-mono" x-text="d.bookingRef"></span></p>
+              <p class="text-[10px] text-ocean-600" x-text="carrierDisplay(d) + ' — Track all containers under this booking'"></p>
+            </div>
+            <button @click="trackByBooking(d)"
+                    class="track-btn text-[11px] font-bold px-4 py-2 rounded-lg border transition flex items-center gap-1.5"
+                    :class="bookingTrackLoading[d.id] ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-wait' : 'bg-ocean-600 hover:bg-ocean-700 border-ocean-700 text-white shadow-sm'"
+                    :disabled="bookingTrackLoading[d.id]">
+              <svg x-show="!bookingTrackLoading[d.id]" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <svg x-show="bookingTrackLoading[d.id]" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              <span x-text="bookingTrackLoading[d.id] ? 'Tracking…' : 'Track by Booking'"></span>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3" x-show="!d.bookingRef || !d.carrier">
+          <div class="bg-warn-50 border border-warn-200 rounded-lg px-4 py-2.5 text-xs text-warn-700 flex items-center gap-2">
+            <svg class="w-4 h-4 text-warn-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Set <strong>Booking Ref</strong> and <strong>Shipping Line</strong> to enable tracking — click Edit Details below.</span>
+          </div>
+        </div>
+
+        <!-- TRACKING RESULTS (containers found under booking) -->
+        <template x-if="bookingTrackResults[d.id]">
+          <div class="tracking-result mb-3">
+            <!-- Status Banner -->
+            <div class="rounded-lg px-4 py-2.5 mb-3 text-xs font-medium flex items-center gap-2"
+                 :class="bookingTrackResults[d.id].success ? 'bg-brand-50 border border-brand-200 text-brand-700' : 'bg-danger-50 border border-danger-200 text-danger-700'">
+              <span x-text="bookingTrackResults[d.id].success ? '✓ Tracking request submitted — Status: ' + bookingTrackResults[d.id].status : '✗ ' + (bookingTrackResults[d.id].error || 'Tracking failed')"></span>
+              <template x-if="bookingTrackResults[d.id].status === 'pending' && bookingTrackResults[d.id].tracking_request_id">
+                <button @click="pollTracking(d, bookingTrackResults[d.id].tracking_request_id)" class="ml-auto bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded text-[10px] font-bold transition">Refresh Status</button>
+              </template>
+            </div>
+
+            <!-- Shipment Summary -->
+            <template x-if="bookingTrackResults[d.id].shipment && Object.keys(bookingTrackResults[d.id].shipment).length > 0">
+              <div class="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-100">
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">Shipment Details</p>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                  <div><span class="text-slate-400 block">BOL</span><span class="text-slate-900 font-mono font-bold" x-text="bookingTrackResults[d.id].shipment.bill_of_lading_number || bookingTrackResults[d.id].shipment.bol || '—'"></span></div>
+                  <div><span class="text-slate-400 block">Vessel</span><span class="text-slate-900 font-medium" x-text="bookingTrackResults[d.id].shipment.pod_vessel_name || bookingTrackResults[d.id].shipment.pod_vessel || '—'"></span></div>
+                  <div><span class="text-slate-400 block">POL</span><span class="text-slate-900 font-medium" x-text="bookingTrackResults[d.id].shipment.port_of_lading_name || bookingTrackResults[d.id].shipment.pol_name || '—'"></span></div>
+                  <div><span class="text-slate-400 block">POD</span><span class="text-slate-900 font-medium" x-text="bookingTrackResults[d.id].shipment.port_of_discharge_name || bookingTrackResults[d.id].shipment.pod_name || '—'"></span></div>
+                  <div><span class="text-slate-400 block">ETD</span><span class="text-warn-600 font-mono" x-text="(bookingTrackResults[d.id].shipment.pol_etd_at || bookingTrackResults[d.id].shipment.pol_etd || '—').slice(0,10)"></span></div>
+                  <div><span class="text-slate-400 block">ATD</span><span class="text-slate-600 font-mono" x-text="(bookingTrackResults[d.id].shipment.pol_atd_at || bookingTrackResults[d.id].shipment.pol_atd || '—').slice(0,10)"></span></div>
+                  <div><span class="text-slate-400 block">ETA</span><span class="text-ocean-600 font-mono" x-text="(bookingTrackResults[d.id].shipment.pod_eta_at || bookingTrackResults[d.id].shipment.pod_eta || '—').slice(0,10)"></span></div>
+                  <div><span class="text-slate-400 block">ATA</span><span class="text-brand-600 font-mono" x-text="(bookingTrackResults[d.id].shipment.pod_ata_at || bookingTrackResults[d.id].shipment.pod_ata || '—').slice(0,10)"></span></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Container List -->
+            <template x-if="bookingTrackResults[d.id].containers && bookingTrackResults[d.id].containers.length > 0">
+              <div>
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">Containers Found: <span class="text-brand-600 font-bold" x-text="bookingTrackResults[d.id].containers.length"></span></p>
+                <div class="space-y-2">
+                  <template x-for="(c,ci) in bookingTrackResults[d.id].containers" :key="d.id+'-c-'+ci">
+                    <div class="bg-white rounded-lg p-3 border border-slate-200 text-[11px]">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                          <svg class="w-4 h-4 text-ocean-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+                          <span class="font-mono text-slate-900 font-bold text-sm" x-text="c.number || 'Awaiting assignment'"></span>
+                        </div>
+                        <span class="bg-ocean-50 text-ocean-700 border border-ocean-200 px-2 py-0.5 rounded-full font-mono text-[10px]" x-text="(c.equipment_length||'?')+'ft '+(c.equipment_type||'')"></span>
+                      </div>
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
+                        <div x-show="c.equipment_height"><span class="text-slate-400">Height:</span> <span class="text-slate-700" x-text="c.equipment_height"></span></div>
+                        <div x-show="c.seal_number"><span class="text-slate-400">Seal:</span> <span class="text-slate-700" x-text="c.seal_number"></span></div>
+                        <div x-show="c.weight_kg"><span class="text-slate-400">Weight:</span> <span class="text-slate-700" x-text="c.weight_kg + ' lbs'"></span></div>
+                        <div x-show="c.pickup_lfd"><span class="text-slate-400">LFD:</span> <span class="text-danger-500 font-bold" x-text="c.pickup_lfd?.slice(0,10)"></span></div>
+                        <div x-show="c.pod_arrived_at"><span class="text-slate-400">Arrived:</span> <span class="text-brand-600" x-text="c.pod_arrived_at?.slice(0,10)"></span></div>
+                        <div x-show="c.pod_discharged_at"><span class="text-slate-400">Discharged:</span> <span class="text-brand-600" x-text="c.pod_discharged_at?.slice(0,10)"></span></div>
+                        <div x-show="c.full_out_at"><span class="text-slate-400">Full Out:</span> <span class="text-brand-600" x-text="c.full_out_at?.slice(0,10)"></span></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <!-- No containers yet -->
+            <template x-if="bookingTrackResults[d.id].success && (!bookingTrackResults[d.id].containers || bookingTrackResults[d.id].containers.length === 0)">
+              <p class="text-xs text-slate-500 italic bg-slate-50 rounded-lg p-3 border border-dashed border-slate-200">No containers returned yet. Carrier may still be processing. Click "Refresh Status" above to check again.</p>
+            </template>
+          </div>
+        </template>
+
+        <!-- Demurrage Warning -->
+        <div x-show="d.stage==='Gate In (Port)' && daysInStage(d) > 5" class="mb-3 bg-warn-50 border border-warn-200 rounded-lg px-3 py-2 text-xs text-warn-700 flex items-center gap-2">
+          <svg class="w-4 h-4 text-warn-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>Demurrage risk: <strong x-text="daysInStage(d)"></strong> days at port (>5 day threshold)</span>
+        </div>
+
+        <!-- ETD/ETA + Action Buttons -->
+        <div class="flex flex-wrap gap-4 text-[11px] font-mono">
+          <span class="text-slate-400">ETD: <span class="text-warn-600 font-medium" x-text="d.etd||'—'"></span></span>
+          <span class="text-slate-400">ETA: <span class="text-ocean-600 font-medium" x-text="d.eta||'—'"></span></span>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <select @change="updateStage(d,$event.target.value);$event.target.value=''" class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] text-slate-700 pr-7 focus:outline-none focus:border-brand-500">
+            <option value="" disabled selected>Update stage…</option>
+            <template x-for="s in stages" :key="s"><option :value="s" x-text="s"></option></template>
+          </select>
+          <button @click="editLogistics(d)" class="text-[11px] bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition text-slate-600 font-medium">Edit Details</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</main>
+
+<!-- ==================== CASH FLOW TAB ==================== -->
+<main class="p-6 max-w-[1440px] mx-auto" x-show="tab==='cashflow'">
+  <h2 class="text-lg font-bold text-slate-900 mb-6">Cash Flow Command Center</h2>
+  <div class="card p-5 mb-6">
+    <h3 class="text-sm font-bold text-slate-900 mb-1">Liquidity Runway</h3>
+    <p class="text-[11px] text-slate-400 mb-4">Red=outflows, Green=inflows, Orange=deposits, Purple=logistics. Line=cumulative.</p>
+    <div class="relative w-full overflow-x-auto" style="min-height:220px;">
+      <template x-if="runwayEvents.length===0"><p class="text-xs text-slate-400 text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">No scheduled payments or receipts found.</p></template>
+      <template x-if="runwayEvents.length>0"><div>
+        <svg :width="graphWidth" height="180" class="mb-2">
+          <line x1="0" :y1="zeroLineY" :x2="graphWidth" :y2="zeroLineY" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4"/>
+          <template x-for="(evt,i) in runwayEvents" :key="i"><g>
+            <rect :x="i*60+20" :y="evt.amount>=0?zeroLineY-evt.barHeight:zeroLineY" width="30" :height="evt.barHeight" :fill="evt.color" rx="2"/>
+            <text :x="i*60+35" :y="evt.amount>=0?zeroLineY-evt.barHeight-6:zeroLineY+evt.barHeight+12" text-anchor="middle" class="font-mono text-[9px] font-bold" :fill="evt.textColor" x-text="'$'+Math.abs(evt.amount).toLocaleString('en-US',{notation:'compact'})"></text>
+            <text :x="i*60+35" y="175" text-anchor="middle" fill="#94a3b8" class="font-mono text-[9px]" x-text="evt.dateLabel"></text>
+          </g></template>
+          <polyline :points="cumulativePoints" fill="none" stroke="#0f172a" stroke-width="2" stroke-opacity="0.8"/>
+          <template x-for="(pt,i) in cumulativePointsArray" :key="'dot-'+i"><circle :cx="pt.x" :cy="pt.y" r="3" fill="#0f172a" stroke="white" stroke-width="1.5"/></template>
+        </svg>
+        <div class="flex gap-6 mt-4 text-[12px] font-mono border-t border-slate-100 pt-3">
+          <span class="text-slate-500">Outflows: <span class="text-danger-500 font-bold" x-text="'$'+runwaySummary.totalOut.toLocaleString()"></span></span>
+          <span class="text-slate-500">Inflows: <span class="text-brand-600 font-bold" x-text="'$'+runwaySummary.totalIn.toLocaleString()"></span></span>
+          <span class="text-slate-500">Net: <span class="font-bold" :class="runwaySummary.net>=0?'text-brand-600':'text-danger-500'" x-text="'$'+runwaySummary.net.toLocaleString()"></span></span>
+        </div>
+      </div></template>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="card p-5"><h3 class="text-sm font-bold text-danger-500 mb-4">Payables</h3><div class="space-y-2"><template x-for="d in deals" :key="'pay-'+d.id"><div class="bg-slate-50 rounded-lg p-3 text-[13px]">
+      <div class="flex justify-between mb-1"><span class="text-slate-900 font-medium" x-text="d.supplier"></span><span class="font-mono text-danger-500 font-bold" x-text="'$'+totalSupplierCost(d).toLocaleString()"></span></div>
+      <div class="flex justify-between text-slate-400 text-xs"><span>Total Bale Purchase</span><span class="font-mono" x-text="d.supplierPayDue?'Due: '+d.supplierPayDue:'No date'"></span></div>
+      <template x-if="totalLogisticsCost(d)>0"><div class="flex justify-between mt-1 text-xs items-center bg-purple-50 p-1.5 rounded"><span class="text-purple-700 font-medium">Logistics Cost</span><div class="text-right"><span class="font-mono text-purple-700 block font-bold" x-text="'$'+totalLogisticsCost(d).toLocaleString()"></span><span class="text-[10px] text-purple-500 block" x-text="d.freightPayDue?'Due: '+d.freightPayDue:'Date not set'"></span></div></div></template>
+      <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-200"><span class="text-slate-500 font-medium text-xs">Paid Supplier?</span><button @click="d.supplierPaid=!d.supplierPaid;save()" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold transition border" :class="d.supplierPaid?'bg-brand-50 border-brand-200 text-brand-600':'bg-slate-100 border-slate-200 text-slate-400'" x-text="d.supplierPaid?'Paid':'Mark Paid'"></button></div>
+    </div></template></div></div>
+    <div class="card p-5"><h3 class="text-sm font-bold text-ocean-500 mb-4">Receivables</h3><div class="space-y-2"><template x-for="d in deals" :key="'rec-'+d.id"><div class="bg-slate-50 rounded-lg p-3 text-[13px]">
+      <div class="flex justify-between mb-1"><span class="text-slate-900 font-medium" x-text="d.buyer"></span><span class="font-mono text-ocean-500 font-bold" x-text="'$'+totalSale(d).toLocaleString()"></span></div>
+      <div class="flex justify-between text-slate-400 text-xs"><span>Total Export Sale</span><span class="font-mono" x-text="d.buyerPayDue?'Due: '+d.buyerPayDue:'No date'"></span></div>
+      <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-200"><span class="text-slate-500 font-medium text-xs">Received?</span><button @click="d.buyerPaid=!d.buyerPaid;save()" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold transition border" :class="d.buyerPaid?'bg-brand-50 border-brand-200 text-brand-600':'bg-slate-100 border-slate-200 text-slate-400'" x-text="d.buyerPaid?'Received':'Mark Received'"></button></div>
+    </div></template></div></div>
+  </div>
+</main>
+
+<!-- ==================== DEAL MODAL ==================== -->
+<div x-show="showModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="showModal=false"></div>
+  <div class="relative bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" @click.stop>
+    <h2 class="text-lg font-bold text-slate-900 mb-5" x-text="editingDeal?'Edit Deal':'New Deal'"></h2>
+    <template x-if="!form.supplierPayDue || !form.buyerPayDue"><div class="bg-danger-50 border border-danger-200 rounded-lg px-4 py-2.5 mb-5 text-xs text-danger-700 flex items-center gap-2"><svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span><strong>Monthly ROI requires both Supplier &amp; Buyer pay dates.</strong></span></div></template>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13px]">
+      <div class="sm:col-span-2"><p class="text-slate-500 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Shipment Scale</p></div>
+      <div class="sm:col-span-2 bg-brand-50 border border-brand-100 p-3 rounded-lg flex items-center gap-4"><div><label class="text-slate-600 text-xs mb-1 block font-bold">Number of Containers</label><input x-model.number="form.numContainers" type="number" min="1" max="50" class="input-field w-32 border-brand-300 focus:border-brand-500" placeholder="1" @input="syncContainerFields()"></div><div class="text-xs text-brand-800 italic">All costs below are <strong>PER CONTAINER</strong>.</div></div>
+      <div class="sm:col-span-2 mt-2"><p class="text-brand-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Buy Side (Supplier) - Per Container</p></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Supplier Name</label><input x-model="form.supplier" class="input-field" placeholder="e.g. Jax Tires Inc"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Tons per Container</label><input x-model.number="form.tons" type="number" class="input-field" placeholder="20"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Buy Price ($/Ton)</label><input x-model.number="form.buyPricePerTon" type="number" class="input-field" placeholder="210"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Supplier Payment Due <span x-show="!form.supplierPayDue" class="text-danger-500 font-bold">⚠</span></label><input x-model="form.supplierPayDue" type="date" class="input-field" :class="!form.supplierPayDue?'border-danger-400 bg-danger-50':''"></div>
+      <div class="sm:col-span-2 mt-2"><p class="text-ocean-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Sell Side (Buyer) - Per Container</p></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Buyer Name</label><input x-model="form.buyer" class="input-field" placeholder="e.g. Klang Rubber Co"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Sell Price ($/Ton)</label><input x-model.number="form.sellPricePerTon" type="number" class="input-field" placeholder="340"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Buyer Payment Due <span x-show="!form.buyerPayDue" class="text-danger-500 font-bold">⚠</span></label><input x-model="form.buyerPayDue" type="date" class="input-field" :class="!form.buyerPayDue?'border-danger-400 bg-danger-50':''"></div>
+      <div class="sm:col-span-2 mt-2"><p class="text-warn-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Logistics Costs - Per Container</p></div>
+      <div class="sm:col-span-2 bg-warn-50 border border-warn-100 p-2 rounded mb-2"><label class="text-warn-800 text-xs mb-1 block font-bold">Freight/Logistics Payment Due</label><input x-model="form.freightPayDue" type="date" class="input-field border-warn-200"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Trucking to Port ($)</label><input x-model.number="form.truckingCost" type="number" class="input-field" placeholder="0"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Ocean Freight ($)</label><input x-model.number="form.oceanFreight" type="number" class="input-field" placeholder="0"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Documentation Fees ($)</label><input x-model.number="form.docFees" type="number" class="input-field" placeholder="0"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Dest. Handling ($)</label><input x-model.number="form.destHandling" type="number" class="input-field" placeholder="0"></div>
+      <div class="sm:col-span-2 mt-2"><p class="text-purple-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Upfront Deposit</p></div>
+      <div class="flex gap-4"><div class="w-1/3"><label class="text-slate-500 text-xs mb-1 block">Deposit %</label><input x-model.number="form.depositPct" type="number" class="input-field" placeholder="30"></div><div class="flex-1"><label class="text-slate-500 text-xs mb-1 block">Calculated Deposit ($)</label><div class="input-field bg-slate-100 text-slate-500 font-mono" x-text="'$'+(Math.round((form.depositPct/100)*(form.tons*form.buyPricePerTon*form.numContainers))||0).toLocaleString()"></div></div></div>
+      <div class="flex items-end pb-1 sm:col-span-2"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" x-model="form.depositPaid" class="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"><span class="text-slate-600 text-xs font-medium">Deposit Paid?</span></label></div>
+      <div class="sm:col-span-2 mt-2"><p class="text-slate-500 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Logistics Details</p></div>
+      <div class="sm:col-span-2 grid grid-cols-2 gap-4">
+        <div><label class="text-slate-500 text-xs mb-1 block">Port of Loading (POL)</label><input x-model="form.pol" class="input-field" placeholder="e.g. Savannah, GA"></div>
+        <div><label class="text-slate-500 text-xs mb-1 block">Port of Discharge (POD)</label><input x-model="form.pod" class="input-field" placeholder="e.g. Port Klang, MY"></div>
+      </div>
+      <template x-for="(cn,idx) in form.containerNos" :key="'cn-'+idx"><div><label class="text-slate-500 text-xs mb-1 block" x-text="'Container #'+(idx+1)"></label><input x-model="form.containerNos[idx]" class="input-field" placeholder="MSKU1234567"></div></template>
+      <div><label class="text-slate-500 text-xs mb-1 block">Booking Ref</label><input x-model="form.bookingRef" class="input-field" placeholder="28755704"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Shipping Line</label><select x-model="form.carrier" class="input-field pr-8"><option value="">Select…</option><template x-for="c in shippingLines" :key="c"><option :value="c" x-text="c"></option></template></select></div>
+      <template x-if="form.carrier==='Other'"><div><label class="text-slate-500 text-xs mb-1 block">Carrier (Other)</label><input x-model="form.carrierOther" class="input-field" placeholder="Enter name"></div></template>
+      <div><label class="text-slate-500 text-xs mb-1 block">Stage</label><select x-model="form.stage" class="input-field pr-8"><template x-for="s in stages" :key="s"><option :value="s" x-text="s"></option></template></select></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">ETD</label><input x-model="form.etd" type="date" class="input-field"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">ETA</label><input x-model="form.eta" type="date" class="input-field"></div>
+    </div>
+    <div class="flex justify-end gap-3 mt-6">
+      <button @click="showModal=false" class="px-4 py-2 text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition font-medium">Cancel</button>
+      <button @click="saveDeal()" class="px-5 py-2 text-xs bg-brand-600 hover:bg-brand-700 rounded-lg text-white font-bold transition shadow-sm">Save Deal</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LOGISTICS MODAL ==================== -->
+<div x-show="showLogisticsModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" @click="showLogisticsModal=false"></div>
+  <div class="relative bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6" @click.stop>
+    <h2 class="text-lg font-bold text-slate-900 mb-5">Edit Logistics</h2>
+    <div class="space-y-3 text-[13px]">
+      <div><label class="text-slate-500 text-xs mb-1 block"># Containers</label><input x-model.number="logForm.numContainers" type="number" min="1" max="50" class="input-field w-32" @input="syncLogContainerFields()"></div>
+      <template x-for="(cn,idx) in logForm.containerNos" :key="'lcn-'+idx"><div><label class="text-slate-500 text-xs mb-1 block" x-text="'Container #'+(idx+1)"></label><input x-model="logForm.containerNos[idx]" class="input-field"></div></template>
+      <div><label class="text-slate-500 text-xs mb-1 block">Booking Ref</label><input x-model="logForm.bookingRef" class="input-field"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Shipping Line</label><select x-model="logForm.carrier" class="input-field pr-8"><option value="">Select…</option><template x-for="c in shippingLines" :key="c"><option :value="c" x-text="c"></option></template></select></div>
+      <template x-if="logForm.carrier==='Other'"><div><label class="text-slate-500 text-xs mb-1 block">Carrier (Other)</label><input x-model="logForm.carrierOther" class="input-field"></div></template>
+      <div><label class="text-slate-500 text-xs mb-1 block">ETD</label><input x-model="logForm.etd" type="date" class="input-field"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">ETA</label><input x-model="logForm.eta" type="date" class="input-field"></div>
+    </div>
+    <div class="flex justify-end gap-3 mt-6">
+      <button @click="showLogisticsModal=false" class="px-4 py-2 text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition font-medium">Cancel</button>
+      <button @click="saveLogistics()" class="px-5 py-2 text-xs bg-brand-600 hover:bg-brand-700 rounded-lg text-white font-bold transition shadow-sm">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOAST ==================== -->
+<div x-show="toast" x-transition class="fixed bottom-6 right-6 z-[70] bg-slate-900 text-white text-xs font-medium px-4 py-2.5 rounded-lg shadow-lg" x-text="toast"></div>
+
+<!-- ==================== APP SCRIPT ==================== -->
+<script>
+const API = {
+  base: window.API_BASE,
+  async request(path, options = {}) {
+    const resp = await fetch(this.base + path, { headers: { 'Content-Type': 'application/json' }, ...options });
+    if (!resp.ok) { const err = await resp.json().catch(() => ({ detail: resp.statusText })); throw new Error(err.detail || `HTTP ${resp.status}`); }
+    return resp.json();
+  },
+  async get(path)       { return this.request(path, { method: 'GET' }); },
+  async post(path, body) { return this.request(path, { method: 'POST', body: JSON.stringify(body) }); },
+  async waitForServer(onMessage, onTick) {
+    const maxRetries = 30;
+    for (let i = 0; i < maxRetries; i++) {
+      try { onMessage(i < 3 ? 'Connecting to server…' : i < 10 ? 'Server is starting up (Render free tier cold start)…' : 'Almost there…'); onTick(i * 2);
+        const resp = await fetch(this.base + '/api/health', { signal: AbortSignal.timeout(5000) });
+        if (resp.ok) return true;
+      } catch (e) { /* retry */ }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    throw new Error('Server did not respond after 60 seconds.');
+  }
+};
+
+function app() {
+  return {
+    tab: 'dashboard',
+    tabs: [{ id: 'dashboard', label: 'Dashboard' }, { id: 'deals', label: 'Deals' }, { id: 'logistics', label: 'Logistics' }, { id: 'cashflow', label: 'Cash Flow' }],
+    deals: [], stages: ['PO Issued', 'Bales Picked Up', 'Gate In (Port)', 'On Vessel', 'B/L Released', 'Arrival'],
+    shippingLines: ['Maersk', 'MSC', 'CMA CGM', 'Hapag-Lloyd', 'COSCO', 'ONE', 'Evergreen', 'HMM', 'ZIM', 'Yang Ming', 'Other'],
+    showModal: false, showLogisticsModal: false, editingDeal: null, logEditingDeal: null,
+    toast: '', form: {}, logForm: {}, saveStatus: 'loading',
+    // Booking-based tracking state
+    bookingTrackLoading: {}, bookingTrackResults: {},
+    serverWaking: true, wakeMessage: 'Connecting to server…', wakeElapsed: 0,
+
+    init() {
+      const self = this;
+      API.waitForServer(function(msg){ self.wakeMessage = msg; }, function(sec){ self.wakeElapsed = sec; })
+      .then(function() { return API.get('/api/deals'); })
+      .then(function(result) {
+        if (result.deals && result.deals.length > 0) { self.deals = result.deals; }
+        else { self.deals = self.mockData(); return API.post('/api/deals', self.deals); }
+      })
+      .then(function() { self.migrateDeals(); self.saveStatus = 'ok'; self.serverWaking = false; })
+      .catch(function(err) { console.error('[INIT]', err); self.saveStatus = 'error'; self.serverWaking = false; self.deals = self.mockData(); self.showToast('Server unavailable — working offline'); });
+    },
+
+    migrateDeals() {
+      for (const d of this.deals) {
+        if (!d.stageUpdatedAt) d.stageUpdatedAt = new Date().toISOString();
+        if (!Array.isArray(d.containerNos)) { d.containerNos = d.containerNo ? [d.containerNo] : ['']; }
+        d.numContainers = Math.max(1, Number(d.numContainers || d.containerNos.length || 1));
+        if (d.depositPct === undefined) d.depositPct = 0;
+        if (d.depositPaid === undefined) d.depositPaid = false;
+        if (d.pol === undefined) d.pol = '';
+        if (d.pod === undefined) d.pod = '';
+        if (d.freightPayDue === undefined) d.freightPayDue = '';
+        d.tons = Number(d.tons)||0; d.buyPricePerTon = Number(d.buyPricePerTon)||0; d.sellPricePerTon = Number(d.sellPricePerTon)||0;
+        d.truckingCost = Number(d.truckingCost)||0; d.oceanFreight = Number(d.oceanFreight)||0; d.docFees = Number(d.docFees)||0; d.destHandling = Number(d.destHandling)||0;
+      }
+    },
+    mockData() {
+      return [{
+        id:'DEAL-001', supplier:'Volk Recycling Services LLC', buyer:'Shree Yinayak Enterprise',
+        numContainers:2, tons:23, buyPricePerTon:35, sellPricePerTon:88, truckingCost:0, oceanFreight:825, docFees:0, destHandling:0,
+        containerNos:['FANU1046044','HAMU3417348'], bookingRef:'28755704', carrier:'Hapag-Lloyd',
+        stage:'On Vessel', etd:'2026-02-19', eta:'2026-03-31', supplierPayDue:'2026-02-16', buyerPayDue:'2026-04-15', freightPayDue:'2026-02-20',
+        supplierPaid:false, buyerPaid:false, depositPct:70, depositPaid:true, pol:'Norfolk, VA', pod:'Mundra, IN', stageUpdatedAt:new Date().toISOString()
+      }];
+    },
+
+    // Persistence
+    save() { const self = this; const clone = JSON.parse(JSON.stringify(self.deals));
+      API.post('/api/deals', clone).then(function(r){ self.saveStatus = r.success ? 'ok' : 'error'; }).catch(function(){ self.saveStatus = 'error'; self.showToast('Save failed'); });
+    },
+    downloadBackup() { const b = new Blob([JSON.stringify(this.deals,null,2)],{type:'application/json'}); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href=u; a.download='TireTrade_Backup_'+new Date().toISOString().slice(0,10)+'.json'; a.click(); URL.revokeObjectURL(u); this.showToast('Backup downloaded'); },
+    importJSON(event) { const file = event.target.files[0]; if (!file) return; const self = this; const reader = new FileReader();
+      reader.onload = function(e) { try { const data = JSON.parse(e.target.result); if (!Array.isArray(data)){alert('JSON must be an array');return;} self.deals=data; self.migrateDeals(); self.save(); self.showToast('Imported '+data.length+' deals'); } catch(err){alert('Invalid JSON: '+err.message);} };
+      reader.readAsText(file); event.target.value = '';
+    },
+
+    // ============= BOOKING-REF TRACKING =============
+    trackByBooking(deal) {
+      if (!deal.bookingRef) { alert('No booking reference set.'); return; }
+      const resolvedCarrier = deal.carrier === 'Other' ? deal.carrierOther : deal.carrier;
+      if (!resolvedCarrier) { alert('Set the Shipping Line first.'); return; }
+      const self = this;
+      self.bookingTrackLoading[deal.id] = true;
+      self.bookingTrackLoading = { ...self.bookingTrackLoading };
+
+      API.post('/api/track', { bookingRef: deal.bookingRef, carrier: resolvedCarrier })
+        .then(function(result) {
+          self.bookingTrackResults[deal.id] = result;
+          self.bookingTrackResults = { ...self.bookingTrackResults };
+
+          // If pending, auto-poll after 5 seconds
+          if (result.status === 'pending' && result.tracking_request_id) {
+            self.showToast('Tracking submitted — polling for results…');
+            setTimeout(function() { self.pollTracking(deal, result.tracking_request_id); }, 5000);
+          }
+        })
+        .catch(function(err) {
+          self.bookingTrackResults[deal.id] = { success: false, error: err.message, containers: [] };
+          self.bookingTrackResults = { ...self.bookingTrackResults };
+          self.showToast('Tracking failed: ' + err.message);
+        })
+        .finally(function() {
+          self.bookingTrackLoading[deal.id] = false;
+          self.bookingTrackLoading = { ...self.bookingTrackLoading };
+        });
+    },
+
+    pollTracking(deal, requestId) {
+      const self = this;
+      API.get('/api/track/' + requestId)
+        .then(function(result) {
+          self.bookingTrackResults[deal.id] = result;
+          self.bookingTrackResults = { ...self.bookingTrackResults };
+          if (result.status === 'succeeded') self.showToast('Tracking data received!');
+          else if (result.status === 'failed') self.showToast('Tracking failed: ' + (result.failed_reason || 'Unknown'));
+        })
+        .catch(function(err) { self.showToast('Poll error: ' + err.message); });
+    },
+
+    showToast(msg) { this.toast = msg; setTimeout(() => this.toast = '', 3000); },
+
+    // Math (unchanged)
+    perContainerCost(d) { return (Number(d.tons)*Number(d.buyPricePerTon))+Number(d.truckingCost)+Number(d.oceanFreight)+Number(d.docFees)+Number(d.destHandling); },
+    totalDealCost(d) { return this.perContainerCost(d)*Number(d.numContainers); },
+    totalSupplierCost(d) { return (Number(d.tons)*Number(d.buyPricePerTon))*Number(d.numContainers); },
+    totalLogisticsCost(d) { return (Number(d.truckingCost)+Number(d.oceanFreight)+Number(d.docFees)+Number(d.destHandling))*Number(d.numContainers); },
+    totalSale(d) { return (Number(d.tons)*Number(d.sellPricePerTon))*Number(d.numContainers); },
+    totalNetProfit(d) { return this.totalSale(d)-this.totalDealCost(d); },
+    calculateDeposit(d) { if(!d.depositPct) return 0; return Math.round((d.depositPct/100)*this.totalSupplierCost(d)); },
+    marginNum(d) { return this.totalSale(d)>0?(this.totalNetProfit(d)/this.totalSale(d))*100:0; },
+    marginPct(d) { return this.marginNum(d).toFixed(1); },
+    marginClass(d) { const m=this.marginNum(d); if(m>=20)return'bg-brand-50 text-brand-600 border border-brand-200'; if(m>=10)return'bg-warn-50 text-warn-600 border border-warn-200'; return'bg-danger-50 text-danger-500 border border-danger-200'; },
+    _parseDate(str) { if(!str||typeof str!=='string'||str.trim()==='') return null; const d=new Date(str+'T00:00:00'); return isNaN(d.getTime())?null:d; },
+    missingROIDates(d) { return !d.supplierPayDue||!d.buyerPayDue||!this._parseDate(d.supplierPayDue)||!this._parseDate(d.buyerPayDue); },
+    monthlyROI(d) { const buyerDate=this._parseDate(d.buyerPayDue); const supplierDate=this._parseDate(d.supplierPayDue); if(!buyerDate||!supplierDate)return 0; const totalCost=this.totalDealCost(d); const profit=this.totalNetProfit(d); if(totalCost<=0)return 0; const freightDate=this._parseDate(d.freightPayDue)||supplierDate; const earliestOutflow=Math.min(supplierDate.getTime(),freightDate.getTime()); const dealDays=Math.round((buyerDate.getTime()-earliestOutflow)/86400000); if(dealDays<=0)return profit>0?'inf':0; return(profit/totalCost)*(30/dealDays)*100; },
+    formatROI(val) { if(val==='inf')return'∞'; if(val===0||val===null||val===undefined)return'0.0%'; if(val>999)return'>999%'; if(val<-999)return'<-999%'; return val.toFixed(1)+'%'; },
+    roiDisplayClass(d) { if(this.missingROIDates(d))return'text-danger-400 date-missing'; const roi=this.monthlyROI(d); if(roi==='inf'||roi>0)return'text-purple-600'; if(roi<0)return'text-danger-500'; return'text-slate-400'; },
+    containerDisplay(d) { const nos=(d.containerNos||[]).filter(c=>c); return nos.length>0?nos.join(', '):'—'; },
+    carrierDisplay(d) { if(d.carrier==='Other')return d.carrierOther||'Other'; return d.carrier||'—'; },
+    updateStage(d,newStage) { if(!newStage)return; d.stage=newStage; d.stageUpdatedAt=new Date().toISOString(); this.save(); this.showToast(d.id+' → '+newStage); },
+    stageIndex(d) { return this.stages.indexOf(d.stage); },
+    daysInStage(d) { if(!d.stageUpdatedAt)return 0; return Math.floor((Date.now()-new Date(d.stageUpdatedAt).getTime())/86400000); },
+    routeDisplay(d) { if(d.pol&&d.pod)return d.pol+' → '+d.pod; if(d.pol)return d.pol+' → ?'; if(d.pod)return'? → '+d.pod; return'Route not set'; },
+    get cashGapDeals() { return this.deals.filter(d=>d.supplierPayDue&&d.buyerPayDue&&d.supplierPayDue<d.buyerPayDue&&!d.supplierPaid); },
+    cashGapDays(d) { if(!d.supplierPayDue||!d.buyerPayDue)return'?'; return Math.round((new Date(d.buyerPayDue)-new Date(d.supplierPayDue))/86400000); },
+    get runwayEvents() { const events=[]; for(const d of this.deals){ const dep=this.calculateDeposit(d); if(dep>0&&!d.depositPaid&&d.supplierPayDue)events.push({date:d.supplierPayDue,amount:-dep,type:'Deposit',id:d.id}); if(d.supplierPayDue&&!d.supplierPaid){const r=this.totalSupplierCost(d)-(d.depositPaid?dep:0);if(r>0)events.push({date:d.supplierPayDue,amount:-r,type:'Supplier',id:d.id});} const lc=this.totalLogisticsCost(d);if(lc>0){const ld=d.freightPayDue||d.supplierPayDue;if(ld&&!d.supplierPaid)events.push({date:ld,amount:-lc,type:'Logistics',id:d.id});} if(d.buyerPayDue&&!d.buyerPaid)events.push({date:d.buyerPayDue,amount:this.totalSale(d),type:'Sale',id:d.id}); } events.sort((a,b)=>a.date.localeCompare(b.date)); if(events.length===0)return[]; const maxVal=Math.max(...events.map(e=>Math.abs(e.amount)),1000); return events.map(e=>({...e,dateLabel:e.date.slice(5),barHeight:Math.max((Math.abs(e.amount)/maxVal)*70,4),color:e.amount>0?'#14a34a':(e.type==='Deposit'?'#f59e0b':e.type==='Logistics'?'#9333ea':'#ef4444'),textColor:e.amount>0?'#166534':'#991b1b'})); },
+    get graphWidth() { return Math.max(this.runwayEvents.length*60+60,600); },
+    get zeroLineY() { return 100; },
+    get cumulativePoints() { let bal=0; let pts=`0,${this.zeroLineY} `; const mx=Math.max(...this.runwayEvents.map(e=>Math.abs(e.amount)),5000); this.runwayEvents.forEach((e,i)=>{bal+=e.amount;const y=this.zeroLineY-(bal/(mx*2))*80;pts+=`${i*60+35},${Math.max(10,Math.min(170,y))} `;}); return pts; },
+    get cumulativePointsArray() { let bal=0;const pts=[];const mx=Math.max(...this.runwayEvents.map(e=>Math.abs(e.amount)),5000);this.runwayEvents.forEach((e,i)=>{bal+=e.amount;const y=this.zeroLineY-(bal/(mx*2))*80;pts.push({x:i*60+35,y:Math.max(10,Math.min(170,y))});}); return pts; },
+    get runwaySummary() { let totalIn=0,totalOut=0;for(const e of this.runwayEvents){if(e.amount>0)totalIn+=e.amount;else totalOut+=Math.abs(e.amount);}return{totalIn,totalOut,net:totalIn-totalOut}; },
+    get metrics() { const tc=this.deals.reduce((s,d)=>s+Number(d.numContainers||1),0); const profits=this.deals.map(d=>this.totalNetProfit(d)); const avg=tc>0?Math.round(profits.reduce((a,b)=>a+b,0)/tc):0; const pay=this.deals.filter(d=>!d.supplierPaid).reduce((s,d)=>s+(this.totalDealCost(d)-(d.depositPaid?this.calculateDeposit(d):0)),0); const rec=this.deals.filter(d=>!d.buyerPaid).reduce((s,d)=>s+this.totalSale(d),0); return{totalContainers:tc,avgProfit:avg,totalPayables:pay,totalReceivables:rec}; },
+    syncContainerFields() { const n=Math.max(1,Math.min(50,this.form.numContainers||1));this.form.numContainers=n;const curr=this.form.containerNos||[];while(curr.length<n)curr.push('');this.form.containerNos=curr.slice(0,n); },
+    syncLogContainerFields() { const n=Math.max(1,Math.min(50,this.logForm.numContainers||1));this.logForm.numContainers=n;const curr=this.logForm.containerNos||[];while(curr.length<n)curr.push('');this.logForm.containerNos=curr.slice(0,n); },
+    emptyForm() { return{supplier:'',buyer:'',numContainers:1,tons:20,buyPricePerTon:0,sellPricePerTon:0,truckingCost:0,oceanFreight:0,docFees:0,destHandling:0,containerNos:[''],bookingRef:'',carrier:'',carrierOther:'',stage:'PO Issued',etd:'',eta:'',supplierPayDue:'',buyerPayDue:'',freightPayDue:'',supplierPaid:false,buyerPaid:false,depositPct:0,depositPaid:false,pol:'',pod:'',stageUpdatedAt:new Date().toISOString()}; },
+    openDealModal() { this.editingDeal=null;this.form=this.emptyForm();this.showModal=true; },
+    editDeal(d) { this.editingDeal=d.id;this.form=JSON.parse(JSON.stringify(d));if(!this.form.containerNos)this.form.containerNos=[''];if(!this.form.numContainers)this.form.numContainers=this.form.containerNos.length;this.showModal=true; },
+    saveDeal() { if(!this.form.supplier||!this.form.buyer){alert('Supplier & Buyer required');return;} if(this.editingDeal){const idx=this.deals.findIndex(d=>d.id===this.editingDeal);if(idx>=0){const old=this.deals[idx].stage;this.form.id=this.editingDeal;if(this.form.stage!==old)this.form.stageUpdatedAt=new Date().toISOString();this.deals[idx]={...this.form};}}else{this.form.id='DEAL-'+String(this.deals.length+1).padStart(3,'0');this.form.stageUpdatedAt=new Date().toISOString();this.deals.push({...this.form});}this.save();this.showModal=false;this.showToast(this.editingDeal?'Deal updated':'Deal created'); },
+    deleteDeal(id) { if(!confirm('Delete '+id+'?'))return;this.deals=this.deals.filter(d=>d.id!==id);this.save();this.showToast(id+' deleted'); },
+    editLogistics(d) { this.logEditingDeal=d.id;this.logForm={numContainers:d.numContainers||1,containerNos:[...(d.containerNos||[''])],bookingRef:d.bookingRef,carrier:d.carrier,carrierOther:d.carrierOther||'',etd:d.etd,eta:d.eta};this.showLogisticsModal=true; },
+    saveLogistics() { const deal=this.deals.find(d=>d.id===this.logEditingDeal);if(deal){deal.numContainers=this.logForm.numContainers;deal.containerNos=[...this.logForm.containerNos];deal.bookingRef=this.logForm.bookingRef;deal.carrier=this.logForm.carrier;deal.carrierOther=this.logForm.carrierOther;deal.etd=this.logForm.etd;deal.eta=this.logForm.eta;this.save();}this.showLogisticsModal=false;this.showToast('Logistics updated'); },
+    exportToExcel() { const rows=this.deals.map(d=>({'Deal ID':d.id,'Supplier':d.supplier,'Buyer':d.buyer,'POL':d.pol,'POD':d.pod,'Containers':d.numContainers,'Booking Ref':d.bookingRef,'Carrier':this.carrierDisplay(d),'Total Profit':this.totalNetProfit(d),'Margin %':this.marginPct(d),'Mo. ROI %':this.formatROI(this.monthlyROI(d))}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Deals');XLSX.writeFile(wb,'TireTrade_Export.xlsx'); },
+    importFromExcel(event) { const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=(e)=>{try{const wb=XLSX.read(e.target.result,{type:'array'});const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);if(rows.length)alert('Parsed '+rows.length+' rows.');}catch(err){alert('Error: '+err.message);}};reader.readAsArrayBuffer(file); }
+  };
+}
+</script>
+</body>
+</html>
