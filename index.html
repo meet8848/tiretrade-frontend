@@ -16,7 +16,7 @@
   // ║  STEP 1: Replace the URL below with your Render backend URL  ║
   // ║  STEP 2: For local dev, uncomment the localhost line          ║
   // ╚═══════════════════════════════════════════════════════════════╝
-  window.API_BASE = "https://tiretrade-api.onrender.com";
+  window.API_BASE = "https://your-backend-url.onrender.com";
   // window.API_BASE = "http://localhost:8000";  // ← Uncomment for local dev
 </script>
 
@@ -168,6 +168,29 @@ tailwind.config = {
           <div class="flex justify-between items-center text-slate-400 text-xs"><span>- Logistics Total</span><span x-text="'$'+totalLogisticsCost(d).toLocaleString()"></span></div>
           <div class="flex justify-between items-center font-bold pt-0.5"><span class="text-slate-700">Net Profit</span><span class="text-base" :class="totalNetProfit(d)>=0?'text-brand-600':'text-danger-500'" x-text="'$'+totalNetProfit(d).toLocaleString()"></span></div>
         </div>
+        <template x-if="hasWeightVariance(d)">
+          <div class="rounded-lg p-4 mb-4 text-[12px] border" :class="d.weightClaimApplied ? 'bg-brand-50 border-brand-200' : 'bg-danger-50 border-danger-200'">
+            <div class="flex items-center justify-between mb-2">
+              <p class="font-bold flex items-center gap-1.5" :class="d.weightClaimApplied ? 'text-brand-700' : 'text-danger-700'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 6l3 6h12l3-6M7.5 12v6m9-6v6M6 18h12"/></svg>
+                <span x-text="d.weightClaimApplied ? '✓ Weight Claim Applied' : '⚖ Weight Variance — Claim Available'"></span>
+              </p>
+              <template x-if="!d.weightClaimApplied">
+                <button @click="d.weightClaimApplied=true; save(); showToast('Freight claim applied — math adjusted')" class="bg-danger-600 hover:bg-danger-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition shadow-sm">Apply Claim</button>
+              </template>
+              <template x-if="d.weightClaimApplied">
+                <button @click="d.weightClaimApplied=false; save(); showToast('Claim removed')" class="bg-slate-200 hover:bg-slate-300 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded-lg transition">Undo Claim</button>
+              </template>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
+              <div><span class="text-slate-400 block">Agreed</span><span class="text-slate-800 font-bold" x-text="d.tons + ' MT'"></span></div>
+              <div><span class="text-slate-400 block">Actual</span><span class="text-slate-800 font-bold" x-text="d.finalTons + ' MT'"></span></div>
+              <div><span class="text-slate-400 block">Short</span><span class="text-danger-600 font-bold" x-text="weightShortfall(d).toFixed(3) + ' MT'"></span></div>
+              <div><span class="text-slate-400 block">Supplier Owes</span><span class="text-danger-600 font-bold" x-text="'$' + freightClaimAmount(d).toFixed(2)"></span></div>
+            </div>
+            <p class="text-[10px] mt-2 italic" :class="d.weightClaimApplied ? 'text-brand-600' : 'text-danger-500'" x-text="d.weightClaimApplied ? 'Claim deducted from total cost. Profit adjusted upward.' : 'Freight was booked for ' + d.tons + ' MT but only ' + d.finalTons + ' MT shipped. Supplier owes $' + freightClaimAmount(d).toFixed(2) + ' for the unused freight portion.'"></p>
+          </div>
+        </template>
         <template x-if="missingROIDates(d)"><div class="bg-danger-50 border border-danger-200 rounded-lg px-3 py-2 mb-4 text-[11px] text-danger-600 font-medium flex items-center gap-1.5"><svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>ROI needs: <span x-show="!d.supplierPayDue" class="underline">Supplier Pay Date</span><span x-show="!d.supplierPayDue && !d.buyerPayDue">, </span><span x-show="!d.buyerPayDue" class="underline">Buyer Pay Date</span> — click Edit to fix</span></div></template>
         <div class="flex flex-col gap-2 mb-4 text-[11px]">
           <template x-if="calculateDeposit(d)>0"><div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded"><span class="text-slate-500">Deposit (<span x-text="d.depositPct+'%'"></span>)</span><span class="font-mono font-bold" :class="d.depositPaid?'text-brand-600':'text-warn-600'" x-text="d.depositPaid?'PAID':'PENDING'"></span></div></template>
@@ -247,8 +270,8 @@ tailwind.config = {
             <!-- Status Banner -->
             <div class="rounded-lg px-4 py-2.5 mb-3 text-xs font-medium flex items-center gap-2"
                  :class="bookingTrackResults[d.id].success ? 'bg-brand-50 border border-brand-200 text-brand-700' : 'bg-danger-50 border border-danger-200 text-danger-700'">
-              <span x-text="bookingTrackResults[d.id].success ? '✓ Tracking request submitted — Status: ' + bookingTrackResults[d.id].status : '✗ ' + (bookingTrackResults[d.id].error || 'Tracking failed')"></span>
-              <template x-if="bookingTrackResults[d.id].status === 'pending' && bookingTrackResults[d.id].tracking_request_id">
+              <span x-text="bookingTrackResults[d.id].success ? '✓ Tracking — Status: ' + (bookingTrackResults[d.id].tracking_status || bookingTrackResults[d.id].status || 'submitted') : '✗ ' + (bookingTrackResults[d.id].error || 'Tracking failed')"></span>
+              <template x-if="(bookingTrackResults[d.id].tracking_status === 'pending' || bookingTrackResults[d.id].status === 'pending') && bookingTrackResults[d.id].tracking_request_id">
                 <button @click="pollTracking(d, bookingTrackResults[d.id].tracking_request_id)" class="ml-auto bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded text-[10px] font-bold transition">Refresh Status</button>
               </template>
             </div>
@@ -382,7 +405,21 @@ tailwind.config = {
       <div class="sm:col-span-2 bg-brand-50 border border-brand-100 p-3 rounded-lg flex items-center gap-4"><div><label class="text-slate-600 text-xs mb-1 block font-bold">Number of Containers</label><input x-model.number="form.numContainers" type="number" min="1" max="50" class="input-field w-32 border-brand-300 focus:border-brand-500" placeholder="1" @input="syncContainerFields()"></div><div class="text-xs text-brand-800 italic">All costs below are <strong>PER CONTAINER</strong>.</div></div>
       <div class="sm:col-span-2 mt-2"><p class="text-brand-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Buy Side (Supplier) - Per Container</p></div>
       <div><label class="text-slate-500 text-xs mb-1 block">Supplier Name</label><input x-model="form.supplier" class="input-field" placeholder="e.g. Jax Tires Inc"></div>
-      <div><label class="text-slate-500 text-xs mb-1 block">Tons per Container</label><input x-model.number="form.tons" type="number" class="input-field" placeholder="20"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Tons per Container (Agreed)</label><input x-model.number="form.tons" type="number" class="input-field" placeholder="20"></div>
+      <div><label class="text-slate-500 text-xs mb-1 block">Final Tons (Actual Weight) <span class="text-[10px] text-slate-400">0 = not set</span></label><input x-model.number="form.finalTons" type="number" step="0.001" class="input-field" :class="form.finalTons > 0 && form.finalTons < form.tons ? 'border-danger-400 bg-danger-50' : ''" placeholder="0"></div>
+      <!-- Weight Variance Alert in Form -->
+      <template x-if="form.finalTons > 0 && form.finalTons !== form.tons">
+        <div class="sm:col-span-2 bg-danger-50 border border-danger-200 rounded-lg p-3 text-xs">
+          <p class="font-bold text-danger-700 mb-1">⚖ Weight Variance Detected</p>
+          <div class="grid grid-cols-2 gap-2 font-mono text-danger-600">
+            <div>Agreed: <span class="font-bold" x-text="form.tons + ' MT'"></span></div>
+            <div>Actual: <span class="font-bold" x-text="form.finalTons + ' MT'"></span></div>
+            <div>Difference: <span class="font-bold" x-text="(form.finalTons - form.tons).toFixed(3) + ' MT'"></span></div>
+            <div>Freight loss: <span class="font-bold" x-text="'$' + (form.tons > form.finalTons ? ((form.tons - form.finalTons) / form.tons * (Number(form.oceanFreight)+Number(form.truckingCost))).toFixed(2) : '0.00')"></span></div>
+          </div>
+          <p class="text-danger-500 mt-1 italic text-[10px]">You pay less for goods, but the freight was booked for the original weight. The supplier owes the freight difference.</p>
+        </div>
+      </template>
       <div><label class="text-slate-500 text-xs mb-1 block">Buy Price ($/Ton)</label><input x-model.number="form.buyPricePerTon" type="number" class="input-field" placeholder="210"></div>
       <div><label class="text-slate-500 text-xs mb-1 block">Supplier Payment Due <span x-show="!form.supplierPayDue" class="text-danger-500 font-bold">⚠</span></label><input x-model="form.supplierPayDue" type="date" class="input-field" :class="!form.supplierPayDue?'border-danger-400 bg-danger-50':''"></div>
       <div class="sm:col-span-2 mt-2"><p class="text-ocean-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Sell Side (Buyer) - Per Container</p></div>
@@ -398,6 +435,9 @@ tailwind.config = {
       <div class="sm:col-span-2 mt-2"><p class="text-purple-600 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Upfront Deposit</p></div>
       <div class="flex gap-4"><div class="w-1/3"><label class="text-slate-500 text-xs mb-1 block">Deposit %</label><input x-model.number="form.depositPct" type="number" class="input-field" placeholder="30"></div><div class="flex-1"><label class="text-slate-500 text-xs mb-1 block">Calculated Deposit ($)</label><div class="input-field bg-slate-100 text-slate-500 font-mono" x-text="'$'+(Math.round((form.depositPct/100)*(form.tons*form.buyPricePerTon*form.numContainers))||0).toLocaleString()"></div></div></div>
       <div class="flex items-end pb-1 sm:col-span-2"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" x-model="form.depositPaid" class="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"><span class="text-slate-600 text-xs font-medium">Deposit Paid?</span></label></div>
+      <template x-if="form.finalTons > 0 && form.finalTons < form.tons">
+        <div class="sm:col-span-2"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" x-model="form.weightClaimApplied" class="w-4 h-4 rounded border-danger-300 text-danger-600 focus:ring-danger-500"><span class="text-danger-600 text-xs font-bold">Weight Claim Applied? (deducts freight reimbursement from cost)</span></label></div>
+      </template>
       <div class="sm:col-span-2 mt-2"><p class="text-slate-500 font-bold text-[11px] uppercase tracking-widest font-mono mb-1">Logistics Details</p></div>
       <div class="sm:col-span-2 grid grid-cols-2 gap-4">
         <div><label class="text-slate-500 text-xs mb-1 block">Port of Loading (POL)</label><input x-model="form.pol" class="input-field" placeholder="e.g. Savannah, GA"></div>
@@ -502,6 +542,8 @@ function app() {
         if (d.freightPayDue === undefined) d.freightPayDue = '';
         d.tons = Number(d.tons)||0; d.buyPricePerTon = Number(d.buyPricePerTon)||0; d.sellPricePerTon = Number(d.sellPricePerTon)||0;
         d.truckingCost = Number(d.truckingCost)||0; d.oceanFreight = Number(d.oceanFreight)||0; d.docFees = Number(d.docFees)||0; d.destHandling = Number(d.destHandling)||0;
+        if (d.finalTons === undefined) d.finalTons = 0;
+        if (d.weightClaimApplied === undefined) d.weightClaimApplied = false;
       }
     },
     mockData() {
@@ -535,16 +577,51 @@ function app() {
 
       API.post('/api/track', { bookingRef: deal.bookingRef, carrier: resolvedCarrier })
         .then(function(result) {
-          self.bookingTrackResults[deal.id] = result;
-          self.bookingTrackResults = { ...self.bookingTrackResults };
+          console.log('[TRACK] Submit response:', JSON.stringify(result).slice(0, 500));
 
-          // If pending, auto-poll after 5 seconds
-          if (result.status === 'pending' && result.tracking_request_id) {
-            self.showToast('Tracking submitted — polling for results…');
-            setTimeout(function() { self.pollTracking(deal, result.tracking_request_id); }, 5000);
+          // If duplicate (already tracked), search existing shipments instead
+          if (result.duplicate) {
+            self.showToast('Already tracked — fetching existing data…');
+            return API.get('/api/track/shipments/search?bol=' + encodeURIComponent(deal.bookingRef))
+              .then(function(searchResult) {
+                console.log('[TRACK] Search result:', JSON.stringify(searchResult).slice(0, 500));
+                if (searchResult.success && searchResult.results && searchResult.results.length > 0) {
+                  var first = searchResult.results[0];
+                  self.bookingTrackResults[deal.id] = {
+                    success: true, tracking_status: 'succeeded', status: 'succeeded',
+                    shipment: first.shipment, containers: first.containers, containerCount: first.containerCount,
+                  };
+                } else {
+                  self.bookingTrackResults[deal.id] = { success: true, status: 'pending', tracking_status: 'pending',
+                    message: 'Booking tracked but no shipment data yet. Terminal49 may still be processing.' };
+                }
+                self.bookingTrackResults = { ...self.bookingTrackResults };
+              });
+          }
+
+          // Extract tracking_request ID from the response (nested in data.data.id)
+          var trId = null;
+          if (result.data && result.data.data && result.data.data.id) trId = result.data.data.id;
+          var trStatus = (result.data && result.data.data && result.data.data.attributes) ? result.data.data.attributes.status : 'unknown';
+
+          if (trId && (trStatus === 'pending' || trStatus === 'created')) {
+            self.bookingTrackResults[deal.id] = { success: true, status: 'pending', tracking_status: 'pending', tracking_request_id: trId,
+              message: 'Submitted. Terminal49 is fetching data…' };
+            self.bookingTrackResults = { ...self.bookingTrackResults };
+            self.showToast('Tracking submitted — auto-polling in 5s…');
+            setTimeout(function() { self.pollTracking(deal, trId); }, 5000);
+          } else if (trId) {
+            // Already succeeded — poll immediately
+            self.bookingTrackResults[deal.id] = { success: true, status: trStatus, tracking_status: trStatus, tracking_request_id: trId };
+            self.bookingTrackResults = { ...self.bookingTrackResults };
+            self.pollTracking(deal, trId);
+          } else {
+            self.bookingTrackResults[deal.id] = result;
+            self.bookingTrackResults = { ...self.bookingTrackResults };
           }
         })
         .catch(function(err) {
+          console.error('[TRACK] Error:', err);
           self.bookingTrackResults[deal.id] = { success: false, error: err.message, containers: [] };
           self.bookingTrackResults = { ...self.bookingTrackResults };
           self.showToast('Tracking failed: ' + err.message);
@@ -557,25 +634,61 @@ function app() {
 
     pollTracking(deal, requestId) {
       const self = this;
+      self.showToast('Polling tracking status…');
       API.get('/api/track/' + requestId)
         .then(function(result) {
+          console.log('[POLL] Result:', JSON.stringify(result).slice(0, 500));
+          // Normalize: backend returns tracking_status, map to status too
+          if (result.tracking_status) result.status = result.tracking_status;
           self.bookingTrackResults[deal.id] = result;
           self.bookingTrackResults = { ...self.bookingTrackResults };
-          if (result.status === 'succeeded') self.showToast('Tracking data received!');
-          else if (result.status === 'failed') self.showToast('Tracking failed: ' + (result.failed_reason || 'Unknown'));
+
+          if (result.tracking_status === 'succeeded') {
+            self.showToast('Tracking data received! ' + (result.containerCount || 0) + ' containers found.');
+          } else if (result.tracking_status === 'pending') {
+            self.showToast('Still processing — will retry in 5s…');
+            result.tracking_request_id = requestId;
+            setTimeout(function() { self.pollTracking(deal, requestId); }, 5000);
+          } else if (result.tracking_status === 'failed') {
+            self.showToast('Tracking failed: ' + (result.reason || 'Unknown'));
+          }
         })
         .catch(function(err) { self.showToast('Poll error: ' + err.message); });
     },
 
     showToast(msg) { this.toast = msg; setTimeout(() => this.toast = '', 3000); },
 
-    // Math (unchanged)
-    perContainerCost(d) { return (Number(d.tons)*Number(d.buyPricePerTon))+Number(d.truckingCost)+Number(d.oceanFreight)+Number(d.docFees)+Number(d.destHandling); },
-    totalDealCost(d) { return this.perContainerCost(d)*Number(d.numContainers); },
-    totalSupplierCost(d) { return (Number(d.tons)*Number(d.buyPricePerTon))*Number(d.numContainers); },
+    // Math — with weight variance support
+    effectiveTons(d) { return (Number(d.finalTons) > 0) ? Number(d.finalTons) : Number(d.tons); },
+    hasWeightVariance(d) { return Number(d.finalTons) > 0 && Number(d.finalTons) !== Number(d.tons); },
+    weightShortfall(d) { return Number(d.tons) - this.effectiveTons(d); },  // positive = underweight
+
+    // Freight claim: supplier owes you proportional freight for the weight they didn't deliver
+    // Formula: (agreedTons - actualTons) / agreedTons × (oceanFreight + trucking) × numContainers
+    freightClaimAmount(d) {
+      if (!this.hasWeightVariance(d) || this.weightShortfall(d) <= 0) return 0;
+      const freightPerContainer = Number(d.oceanFreight) + Number(d.truckingCost);
+      return (this.weightShortfall(d) / Number(d.tons)) * freightPerContainer * Number(d.numContainers);
+    },
+
+    // What the supplier actually owes (less goods, but they owe freight claim)
+    perContainerCost(d) {
+      const tons = this.effectiveTons(d);
+      let cost = (tons * Number(d.buyPricePerTon)) + Number(d.truckingCost) + Number(d.oceanFreight) + Number(d.docFees) + Number(d.destHandling);
+      // If claim is applied, subtract the freight claim per container
+      if (d.weightClaimApplied && this.freightClaimAmount(d) > 0) {
+        cost -= this.freightClaimAmount(d) / Number(d.numContainers);
+      }
+      return cost;
+    },
+    totalDealCost(d) { return this.perContainerCost(d) * Number(d.numContainers); },
+    totalSupplierCost(d) { return (this.effectiveTons(d) * Number(d.buyPricePerTon)) * Number(d.numContainers); },
     totalLogisticsCost(d) { return (Number(d.truckingCost)+Number(d.oceanFreight)+Number(d.docFees)+Number(d.destHandling))*Number(d.numContainers); },
-    totalSale(d) { return (Number(d.tons)*Number(d.sellPricePerTon))*Number(d.numContainers); },
-    totalNetProfit(d) { return this.totalSale(d)-this.totalDealCost(d); },
+    totalSale(d) { return (this.effectiveTons(d) * Number(d.sellPricePerTon)) * Number(d.numContainers); },
+    totalNetProfit(d) {
+      let profit = this.totalSale(d) - this.totalDealCost(d);
+      return profit;
+    },
     calculateDeposit(d) { if(!d.depositPct) return 0; return Math.round((d.depositPct/100)*this.totalSupplierCost(d)); },
     marginNum(d) { return this.totalSale(d)>0?(this.totalNetProfit(d)/this.totalSale(d))*100:0; },
     marginPct(d) { return this.marginNum(d).toFixed(1); },
@@ -602,7 +715,7 @@ function app() {
     get metrics() { const tc=this.deals.reduce((s,d)=>s+Number(d.numContainers||1),0); const profits=this.deals.map(d=>this.totalNetProfit(d)); const avg=tc>0?Math.round(profits.reduce((a,b)=>a+b,0)/tc):0; const pay=this.deals.filter(d=>!d.supplierPaid).reduce((s,d)=>s+(this.totalDealCost(d)-(d.depositPaid?this.calculateDeposit(d):0)),0); const rec=this.deals.filter(d=>!d.buyerPaid).reduce((s,d)=>s+this.totalSale(d),0); return{totalContainers:tc,avgProfit:avg,totalPayables:pay,totalReceivables:rec}; },
     syncContainerFields() { const n=Math.max(1,Math.min(50,this.form.numContainers||1));this.form.numContainers=n;const curr=this.form.containerNos||[];while(curr.length<n)curr.push('');this.form.containerNos=curr.slice(0,n); },
     syncLogContainerFields() { const n=Math.max(1,Math.min(50,this.logForm.numContainers||1));this.logForm.numContainers=n;const curr=this.logForm.containerNos||[];while(curr.length<n)curr.push('');this.logForm.containerNos=curr.slice(0,n); },
-    emptyForm() { return{supplier:'',buyer:'',numContainers:1,tons:20,buyPricePerTon:0,sellPricePerTon:0,truckingCost:0,oceanFreight:0,docFees:0,destHandling:0,containerNos:[''],bookingRef:'',carrier:'',carrierOther:'',stage:'PO Issued',etd:'',eta:'',supplierPayDue:'',buyerPayDue:'',freightPayDue:'',supplierPaid:false,buyerPaid:false,depositPct:0,depositPaid:false,pol:'',pod:'',stageUpdatedAt:new Date().toISOString()}; },
+    emptyForm() { return{supplier:'',buyer:'',numContainers:1,tons:20,buyPricePerTon:0,sellPricePerTon:0,truckingCost:0,oceanFreight:0,docFees:0,destHandling:0,containerNos:[''],bookingRef:'',carrier:'',carrierOther:'',stage:'PO Issued',etd:'',eta:'',supplierPayDue:'',buyerPayDue:'',freightPayDue:'',supplierPaid:false,buyerPaid:false,depositPct:0,depositPaid:false,pol:'',pod:'',finalTons:0,weightClaimApplied:false,stageUpdatedAt:new Date().toISOString()}; },
     openDealModal() { this.editingDeal=null;this.form=this.emptyForm();this.showModal=true; },
     editDeal(d) { this.editingDeal=d.id;this.form=JSON.parse(JSON.stringify(d));if(!this.form.containerNos)this.form.containerNos=[''];if(!this.form.numContainers)this.form.numContainers=this.form.containerNos.length;this.showModal=true; },
     saveDeal() { if(!this.form.supplier||!this.form.buyer){alert('Supplier & Buyer required');return;} if(this.editingDeal){const idx=this.deals.findIndex(d=>d.id===this.editingDeal);if(idx>=0){const old=this.deals[idx].stage;this.form.id=this.editingDeal;if(this.form.stage!==old)this.form.stageUpdatedAt=new Date().toISOString();this.deals[idx]={...this.form};}}else{this.form.id='DEAL-'+String(this.deals.length+1).padStart(3,'0');this.form.stageUpdatedAt=new Date().toISOString();this.deals.push({...this.form});}this.save();this.showModal=false;this.showToast(this.editingDeal?'Deal updated':'Deal created'); },
