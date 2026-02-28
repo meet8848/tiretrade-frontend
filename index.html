@@ -487,8 +487,10 @@ tailwind.config = {
 const API = {
   base: window.API_BASE,
   async request(path, options = {}) {
-    const resp = await fetch(this.base + path, { headers: { 'Content-Type': 'application/json' }, ...options });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({ detail: resp.statusText })); throw new Error(err.detail || `HTTP ${resp.status}`); }
+    let resp;
+    try { resp = await fetch(this.base + path, { headers: { 'Content-Type': 'application/json' }, ...options }); }
+    catch (netErr) { throw new Error('Network error: ' + netErr.message); }
+    if (!resp.ok) { let detail = 'HTTP ' + resp.status; try { const e = await resp.json(); detail = e.detail || detail; } catch(x) {} throw new Error(detail); }
     return resp.json();
   },
   async get(path)       { return this.request(path, { method: 'GET' }); },
